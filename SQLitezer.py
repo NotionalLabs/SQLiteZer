@@ -17,9 +17,12 @@ import time
 import sqlite3
 import logging
 import csv
+import struct
 
-version = '0.1'
-build = '20130828'
+import NotionalSQLite
+
+version = '0.2'
+build = '20130831'
 
 def main():
     startTime = datetime.datetime.now()
@@ -32,6 +35,49 @@ def main():
     logging.info(" Target Database: " + os.path.abspath(infile))
     logging.info(" Report File: " + os.path.abspath(outfile))
 
+    print "\n <SETTING UP REPORT FILE...>"
+    outcsv = csv.writer(open(outfile,"wb"))
+
+    print "\n[DATABASE HEADER]"
+    header = NotionalSQLite.NotionalSQLite(infile)
+    if header.checkSignature():
+        logging.info(" Signature check: Valid")
+    else:
+        logging.info(" Signature check: Invalid")
+        logging.error("ERROR: Database is corrupt or encrypted - Signature: %s" % header.headerdict["sig"])
+        logging.error("ERROR: Cannot continue - exiting.")
+        sys.exit(1)
+
+    transheaderdict = header.translateHeader()
+
+    headerfields = (("Page Size","pagesize"),
+                    ("Read Format","readver"),
+                    ("Write Format","writever"),
+                    ("Max Reserved Bytes","maxpayload"),
+                    ("Min Reserved Bytes","minpayload"),
+                    ("Leaf Reserved Bytes","leafpayload"),
+                    ("File Change Count","changecount"),
+                    ("In-header DB Size","dbsize"),
+                    ("Free Page List starting page","freepagelist"),
+                    ("Schema Cookie","schemacookie"),
+                    ("Schema Format number","schemanum"),
+                    ("Suggested cache size","defpagecache"),
+                    ("Largest Root Page Number","bigroottree"),
+                    ("Text Encoding","textencode"),
+                    ("User Version","userver"),
+                    ("Vacuum Settings","incvac"),
+                    ("Expansion block","expansion"),
+                    ("Valid-For Version","validfor"),
+                    ("Last SQLite Version","sqlver"))
+
+    outcsv.writerow(["{HEADER}"])
+    outcsv.writerow(["Field Name","Raw Value","Translated Value"])
+    for value in headerfields:
+        print " %s: %s" % (value[0],transheaderdict[value[1]])
+        outcsv.writerow((value[0],header.headerdict[value[1]],transheaderdict[value[1]]))
+
+    print "\n[CONTENT ANALYSIS]"
+
     print "\n <CONNECTING TO DB...>"
     try:
         dbconn = sqlite3.connect(infile)
@@ -39,9 +85,6 @@ def main():
     except:
         logging.error("Could not connect to SQLite DB - Exiting...")
         sys.exit(1)
-
-    print "\n <SETTING UP REPORT FILE...>"
-    outcsv = csv.writer(open(outfile,"wb"))
 
     print "\n <GENERATING TABLE CONTENT REPORT>"
     elementCount, elementDict = getElements(dbcurs)
@@ -226,7 +269,7 @@ Forensic SQLite Database Analyser and Reporting Tool         """)
     print "------------------------------------------------------"
     logging.info("Version ["+version+"] Build ["+build+"] Author [James E. Hung]")
     print "------------------------------------------------------"
-    time.sleep(2)
+    #time.sleep(3)
     return
 
 def validateArgs():
