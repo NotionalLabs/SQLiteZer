@@ -50,7 +50,8 @@ def main():
 
     transheaderdict = header.translateHeader()
 
-    headerfields = (("Page Size","pagesize"),
+    headerfields = (("Signature","sig"),
+                    ("Page Size","pagesize"),
                     ("Read Format","readver"),
                     ("Write Format","writever"),
                     ("Max Reserved Bytes","maxpayload"),
@@ -59,6 +60,7 @@ def main():
                     ("File Change Count","changecount"),
                     ("In-header DB Size","dbsize"),
                     ("Free Page List starting page","freepagelist"),
+                    ("Total Free Pages","totalfreepage"),
                     ("Schema Cookie","schemacookie"),
                     ("Schema Format number","schemanum"),
                     ("Suggested cache size","defpagecache"),

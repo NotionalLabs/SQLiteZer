@@ -21,7 +21,7 @@ class NotionalSQLite:
     _dbheaderfmt = ">16shbbbbbbiiiiiiiiiii24sii"
     _dictkeys = ["sig","pagesize","writever","readver","resspace","maxpayload",
                 "minpayload","leafpayload","changecount","dbsize","freepagelist",
-                "totalfreelist","schemacookie","schemanum","defpagecache",
+                "totalfreepage","schemacookie","schemanum","defpagecache",
                 "bigroottree","textencode","userver","incvac","expansion",
                 "validfor","sqlver"]
 
@@ -43,6 +43,25 @@ class NotionalSQLite:
 
         self._parseDBHeader();
 
+        recordstartofs = 5668970
+        val,length = self._getVarIntOfs(recordstartofs)
+        print "Record Length val: " + str(val)
+        print "varint len: " + str(length)
+        recordstartofs+=length
+        val,length = self._getVarIntOfs(recordstartofs)
+        print "Record Row ID: " + str(val)
+        print "varint len: " + str(length)
+        recordstartofs+=length
+        val,length = self._getVarIntOfs(recordstartofs)
+        print "Payload Header Length: " + str(val)
+        print "varint len: " + str(length)
+        recordstartofs+=length
+
+        #celllist = self._parseCellHeader(5668970)
+        #print celllist
+
+        self._parseCell(5668970)
+
     def _parseDBHeader(self):
         """
         Parse the SQLite 3 database header metadata and control information.
@@ -53,6 +72,115 @@ class NotionalSQLite:
         self.headerdict = dict(zip(self._dictkeys,list(unpackedheader)))
         if (self.headerdict["readver"] == 2) or (self.headerdict["writever"] == 2):
             self.isWAL = True
+
+    def _parseCell(self,offset):
+        """
+        Parse a B-Tree Leaf Page Cell, given it's startng abslute byte offset.
+        Pass absolute starting byte offset for the cell header.
+        Returns the parsed cell as a list in the form:
+
+        """
+        celldatalist = list()
+
+        cellheader,offset,payloadlen,recordnum = self._parseCellHeader(offset)
+
+        for field in cellheader:
+            if field[0] == "NULL":
+                celldatalist.append(recordnum)
+            elif field[0] == "ST_INT8":
+                pass
+
+
+
+    def _parseCellHeader(self,offset):
+        """
+        Parse a B-Tree Leaf Page Cell Header, given it's starting absolute byte
+        offset.
+        Pass absolute starting byte offset for the cell header to be decoded.
+        Returns tuple containing a list of tuples in the form
+        [(String type,int length),...], and the starting offset of the payload
+        fields.
+        """
+        headerlist = list()
+
+        # Payload length
+        payloadlen,length = self._getVarIntOfs(offset)
+        offset+=length
+        # Record Number
+        recordnum,length = self._getVarIntOfs(offset)
+        offset+=length
+        # Payload Header Length
+        payloadheaderlen,length = self._getVarIntOfs(offset)
+        payloadheaderlenofs = offset
+        offset+=length
+        # Payload Fields
+        while offset < (payloadheaderlenofs + payloadheaderlen):
+            fieldtype,length = self._getVarIntOfs(offset)
+            # Determine Serial Type
+            if fieldtype == 0:
+                headerlist.append(("NULL",0))
+            elif fieldtype == 1:
+                headerlist.append(("ST_INT8",1))
+            elif fieldtype == 2:
+                headerlist.append(("ST_INT16",2))
+            elif fieldtype == 3:
+                headerlist.append(("ST_INT24",3))
+            elif fieldtype == 4:
+                headerlist.append(("ST_INT32",4))
+            elif fieldtype == 5:
+                headerlist.append(("ST_INT48",6))
+            elif fieldtype == 6:
+                headerlist.append(("ST_INT64",8))
+            elif fieldtype == 7:
+                headerlist.append(("ST_FLOAT",8))
+            elif fieldtype == 8:
+                headerlist.append(("ST_C0",0))
+            elif fieldtype == 9:
+                headerlist.append(("ST_C1",0))
+            elif fieldtype > 11:
+                if (fieldtype%2) == 0:
+                    headerlist.append(("ST_BLOB",(fieldtype-12)/2))
+                else:
+                    headerlist.append(("ST_TEXT",(fieldtype-13)/2))
+            else:
+                headerlist.append(("Reserved: %s" % str(fieldtype),0))
+            offset+=length
+
+        return headerlist, offset, payloadlen, recordnum
+
+    def _getVarIntOfs(self,offset):
+        """
+        Decode Huffman-coded two's compliment integers used for storing 64-bit
+        variable-length integers. Implements Mike Harrington's example technique
+        for decoding SQLite VarInts (https://mobileforensics.wordpress.com/2011/
+        09/17/huffman-coding-in-sqlite-a-primer-for-mobile-forensics/). SQLite
+        spec allows for between 1-9 byte runs per VarInt - this method should
+        scale to that scale, despite such huge values being rare in practice.
+
+        Pass starting byte offset to decode.
+        Returns tuple(VarInt value and the VarInt length).
+        """
+        self.dbfile.seek(offset)
+        varintlen = 0
+        varintval = 0
+
+        while True:
+            if((ord(self.dbfile.read(1))&(1<<7))!=0):
+                varintlen+=1
+            else:
+                varintlen+=1
+                break
+        self.dbfile.seek(offset)
+        varintval = 0
+        for i in reversed(range(0,varintlen)):
+            if (i == 0):
+                byteval = ord(self.dbfile.read(1))
+                varintval+=byteval
+            else:
+                byteval = ord(self.dbfile.read(1))
+                varintval+=(byteval - 128)*(2**(i*7))
+
+        return varintval,varintlen
 
     def checkSignature(self):
         """
@@ -76,7 +204,7 @@ class NotionalSQLite:
         else:
             self.headertransdict["sig"] = ("Invalid Signature")
     # Page Size
-        if self.headerdict["pagesize"] == 1:
+        if self.headerdict["pagesize"] == -32768:
             self.headertransdict["pagesize"] = "65536 - SQLite v.3.7.1 or greater"
         else:
             self.headertransdict["pagesize"] = str(self.headerdict["pagesize"])
@@ -131,6 +259,8 @@ class NotionalSQLite:
             self.headertransdict["dbsize"] = "Invalid value: %s" % str(self.headerdict["dbsize"])
     # Free Page List page number
         self.headertransdict["freepagelist"] = str(self.headerdict["freepagelist"])
+    # Total Free Pages
+        self.headertransdict["totalfreepage"] = str(self.headerdict["totalfreepage"])
     # Schema cookie
         self.headertransdict["schemacookie"] = str(self.headerdict["schemacookie"])
     # Schema Format number

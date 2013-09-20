@@ -1,3 +1,9 @@
 http://forensicsfromthesausagefactory.blogspot.com/2011/04/carving-sqlite-databases-from.html
 
+http://forensicsfromthesausagefactory.blogspot.com/2011/05/analysis-of-record-structure-within.html
+
 http://sandbox.dfrws.org/2011/fox-it/DFRWS2011_results/Report/Sqlite_carving_extractAndroidData.pdf
+
+https://viaforensics.com/computer-forensics/sqlite-forensics-presentation-andrew-hoog.html
+
+https://mobileforensics.wordpress.com/category/sqlite/
