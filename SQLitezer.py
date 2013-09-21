@@ -21,8 +21,8 @@ import struct
 
 import NotionalSQLite
 
-version = '0.2'
-build = '20130831'
+version = '0.3'
+build = '20130921'
 
 def main():
     startTime = datetime.datetime.now()

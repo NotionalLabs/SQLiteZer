@@ -31,6 +31,8 @@ class NotionalSQLite:
     dbfile = None
     isWAL = False
 
+    debug = 0
+
     def __init__(self, filepath):
 
         for key in self._dictkeys:
@@ -43,24 +45,25 @@ class NotionalSQLite:
 
         self._parseDBHeader();
 
-        recordstartofs = 5668970
-        val,length = self._getVarIntOfs(recordstartofs)
-        print "Record Length val: " + str(val)
-        print "varint len: " + str(length)
-        recordstartofs+=length
-        val,length = self._getVarIntOfs(recordstartofs)
-        print "Record Row ID: " + str(val)
-        print "varint len: " + str(length)
-        recordstartofs+=length
-        val,length = self._getVarIntOfs(recordstartofs)
-        print "Payload Header Length: " + str(val)
-        print "varint len: " + str(length)
-        recordstartofs+=length
+        if self.debug:
 
-        #celllist = self._parseCellHeader(5668970)
-        #print celllist
+            """
+            recordstartofs = 60783
+            val,length = self._getVarIntOfs(recordstartofs)
+            print "Record Length val: " + str(val)
+            print "varint len: " + str(length)
+            recordstartofs+=length
+            val,length = self._getVarIntOfs(recordstartofs)
+            print "Record Row ID: " + str(val)
+            print "varint len: " + str(length)
+            recordstartofs+=length
+            val,length = self._getVarIntOfs(recordstartofs)
+            print "Payload Header Length: " + str(val)
+            print "varint len: " + str(length)
+            recordstartofs+=length
+            """
 
-        self._parseCell(5668970)
+            print self._parseCell(60783)
 
     def _parseDBHeader(self):
         """
@@ -75,21 +78,58 @@ class NotionalSQLite:
 
     def _parseCell(self,offset):
         """
-        Parse a B-Tree Leaf Page Cell, given it's startng abslute byte offset.
+        Parse a B-Tree Leaf Page Cell, given it's starting absolute byte offset.
         Pass absolute starting byte offset for the cell header.
         Returns the parsed cell as a list in the form:
 
         """
         celldatalist = list()
 
-        cellheader,offset,payloadlen,recordnum = self._parseCellHeader(offset)
+        cellheader,dataoffset,payloadlen,recordnum = self._parseCellHeader(offset)
 
         for field in cellheader:
             if field[0] == "NULL":
                 celldatalist.append(recordnum)
             elif field[0] == "ST_INT8":
-                pass
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(ord(struct.unpack(">c",self.dbfile.read(1))[0]))
+                dataoffset+=field[1]
+            elif field[0] == "ST_INT16":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(struct.unpack(">h",self.dbfile.read(2))[0])
+                dataoffset+=field[1]
+            elif field[0] == "ST_INT32":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(struct.unpack(">i",self.dbfile.read(4))[0])
+                dataoffset+=field[1]
+            elif field[0] == "ST_INT48":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append("ST_INT48 - NOT IMPLEMENTED!") # NOT IMPLEMENTED YET!
+                dataoffset+=field[1]
+            elif field[0] == "ST_INT64":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(struct.unpack(">q",self.dbfile.read(8))[0])
+                dataoffset+=8
+            elif field[0] == "ST_FLOAT":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(struct.unpack(">d",self.dbfile.read(8))[0])
+                dataoffset+=8
+            elif field[0] == "ST_C0":
+                celldatalist.append("ST_C0 - NOT IMPLEMENTED!") # NOT IMPLEMENTED YET!
+            elif field[0] == "ST_C1":  
+                celldatalist.append("ST_C0 - NOT IMPLEMENTED!") # NOT IMPLEMENTED YET!
+            elif field[0] == "ST_BLOB":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(self.dbfile.read(field[1]))
+                dataoffset+=field[1]
+            elif field[0] == "ST_TEXT":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append(struct.unpack("%ss" % str(field[1]),self.dbfile.read(field[1]))[0])
+                dataoffset+=field[1]
+            else:
+                print field[0]
 
+        return celldatalist
 
 
     def _parseCellHeader(self,offset):
@@ -111,10 +151,10 @@ class NotionalSQLite:
         offset+=length
         # Payload Header Length
         payloadheaderlen,length = self._getVarIntOfs(offset)
-        payloadheaderlenofs = offset
+        payloadheaderlenofs = offset + payloadheaderlen
         offset+=length
         # Payload Fields
-        while offset < (payloadheaderlenofs + payloadheaderlen):
+        while offset < (payloadheaderlenofs):
             fieldtype,length = self._getVarIntOfs(offset)
             # Determine Serial Type
             if fieldtype == 0:
@@ -155,14 +195,13 @@ class NotionalSQLite:
         for decoding SQLite VarInts (https://mobileforensics.wordpress.com/2011/
         09/17/huffman-coding-in-sqlite-a-primer-for-mobile-forensics/). SQLite
         spec allows for between 1-9 byte runs per VarInt - this method should
-        scale to that scale, despite such huge values being rare in practice.
+        scale to that size, despite such huge values being rare in practice.
 
         Pass starting byte offset to decode.
         Returns tuple(VarInt value and the VarInt length).
         """
         self.dbfile.seek(offset)
-        varintlen = 0
-        varintval = 0
+        varintlen = varintval = 0
 
         while True:
             if((ord(self.dbfile.read(1))&(1<<7))!=0):
@@ -171,7 +210,6 @@ class NotionalSQLite:
                 varintlen+=1
                 break
         self.dbfile.seek(offset)
-        varintval = 0
         for i in reversed(range(0,varintlen)):
             if (i == 0):
                 byteval = ord(self.dbfile.read(1))
@@ -179,6 +217,29 @@ class NotionalSQLite:
             else:
                 byteval = ord(self.dbfile.read(1))
                 varintval+=(byteval - 128)*(2**(i*7))
+
+        return varintval,varintlen
+
+    def _getVarInt(self,bytestring):
+        """
+        As with _getVarIntOfs, but with an already-known length byte string.
+        Example: result = _getVarInt(file.read(3))
+        Warning: This methid will attempt to decode the bytestring regardless
+        of whether it's a valid VarInt. 
+        Pass byte string to decode.
+        Returns VarInt value.
+        """
+        varintlen = len(bytestring)
+        varintval = bytestringpos = 0
+
+        for i in reversed(range(0,varintlen)):
+            if (i == 0):
+                byteval = ord(bytestring[bytestringpos])
+                varintval+=byteval
+            else:
+                byteval = ord(bytestring[bytestringpos])
+                varintval+=(byteval - 128)*(2**(i*7))
+            bytestringpos+=1
 
         return varintval,varintlen
 
