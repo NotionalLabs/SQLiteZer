@@ -11,6 +11,7 @@
 #-------------------------------------------------------------------------------
 import logging
 import struct
+import os
 
 
 class NotionalSQLite:
@@ -65,6 +66,8 @@ class NotionalSQLite:
 
             print self._parseCell(60783)
 
+            print self.mapPages(4096)
+
     def _parseDBHeader(self):
         """
         Parse the SQLite 3 database header metadata and control information.
@@ -84,7 +87,6 @@ class NotionalSQLite:
 
         """
         celldatalist = list()
-
         cellheader,dataoffset,payloadlen,recordnum = self._parseCellHeader(offset)
 
         for field in cellheader:
@@ -116,7 +118,7 @@ class NotionalSQLite:
                 dataoffset+=8
             elif field[0] == "ST_C0":
                 celldatalist.append("ST_C0 - NOT IMPLEMENTED!") # NOT IMPLEMENTED YET!
-            elif field[0] == "ST_C1":  
+            elif field[0] == "ST_C1":
                 celldatalist.append("ST_C0 - NOT IMPLEMENTED!") # NOT IMPLEMENTED YET!
             elif field[0] == "ST_BLOB":
                 self.dbfile.seek(dataoffset)
@@ -225,7 +227,7 @@ class NotionalSQLite:
         As with _getVarIntOfs, but with an already-known length byte string.
         Example: result = _getVarInt(file.read(3))
         Warning: This methid will attempt to decode the bytestring regardless
-        of whether it's a valid VarInt. 
+        of whether it's a valid VarInt.
         Pass byte string to decode.
         Returns VarInt value.
         """
@@ -242,6 +244,52 @@ class NotionalSQLite:
             bytestringpos+=1
 
         return varintval,varintlen
+
+    def mapPages(self,pagesize):
+        """
+        Debugging method to give a visual representation of the distribution of
+        page types.
+        Pass the pagesize value from the DB header.
+        Returns a string.
+        key:
+        h = header page
+        i = interior index b-tree page
+        t = interior table b-tree page
+        I = leaf index b-tree page
+        T = leaf table b-tree page
+        """
+        offset = intindex = inttbl = leafindex = leaftbl = headercnt = overflow = 0
+        pagemap = ""
+        filesize = os.path.getsize(self.dbfile.name)
+        while (offset < filesize):
+            self.dbfile.seek(offset)
+            flag = ord(self.dbfile.read(1))
+            if (flag == 2):
+                pagemap+="i"
+                intindex+=1
+            elif (flag == 5):
+                pagemap+="t"
+                inttbl+=1
+            elif (flag == 10):
+                pagemap+="I"
+                leafindex+=1
+            elif (flag == 13):
+                pagemap+="T"
+                leaftbl+=1
+            elif (flag == 83):
+                pagemap+="h"
+                headercnt+=1
+            else:
+                pagemap+="o"
+                overflow+=1
+            offset+=(pagesize)
+        print str(intindex)
+        print str(inttbl)
+        print str(leafindex)
+        print str(leaftbl)
+        print str(headercnt)
+        print str(overflow)
+        return pagemap
 
     def checkSignature(self):
         """
