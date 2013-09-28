@@ -40,6 +40,10 @@ def main():
 
     print "\n[DATABASE HEADER]"
     header = NotionalSQLite.NotionalSQLite(infile)
+    if header.statuscode == 1:
+        logging.error("ERROR: Could not create NotionalSQL object - check that the target database is closed and unlocked.")
+        logging.error("ERROR: Cannot continue - exiting.")
+        sys.exit(1)
     if header.checkSignature():
         logging.info(" Signature check: Valid")
     else:

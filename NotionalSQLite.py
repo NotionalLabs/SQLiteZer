@@ -26,6 +26,7 @@ class NotionalSQLite:
                 "bigroottree","textencode","userver","incvac","expansion",
                 "validfor","sqlver"]
 
+    statuscode = 0
     headerdict = dict()
     headertransdict = dict()
     isDirty = bool()
@@ -43,6 +44,7 @@ class NotionalSQLite:
             self.dbfile = open(filepath,"rb")
         except:
             logging.error("ERROR: Could not open database file")
+            return
 
         self._parseDBHeader();
 
@@ -65,6 +67,7 @@ class NotionalSQLite:
             """
 
             print self._parseCell(60783)
+        self.statuscode = 0
 
             print self.mapPages(4096)
 
