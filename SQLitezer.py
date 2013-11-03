@@ -21,8 +21,8 @@ import struct
 
 import NotionalSQLite
 
-version = '0.3'
-build = '20130921'
+version = '0.4'
+build = '20131013'
 
 def main():
     startTime = datetime.datetime.now()
@@ -82,6 +82,40 @@ def main():
         print " %s: %s" % (value[0],transheaderdict[value[1]])
         outcsv.writerow((value[0],header.headerdict[value[1]],transheaderdict[value[1]]))
 
+    print "\n[PAGE MAP]\n"
+
+    pagemap = header.mapPages(header.headerdict['pagesize'])
+
+    mapheaderfields = (("Page Map"),
+                       ("Interior Index Pages (i)"),
+                       ("Interior Table Pages (t)"),
+                       ("Leaf Index Pages (I)"),
+                       ("Leaf Table Pages (T)"),
+                       ("Header Pages (H)"),
+                       ("Overflow Pages (O)"),
+                       ("Total Identified Pages"))
+
+    outcsv.writerow(["{PAGE MAP}"])
+    outcsv.writerow(["Page Statistics","Value"])
+
+    i = pagecount = 0
+    for value in mapheaderfields:
+        if (i == 0):
+            j=0
+            rowlabel = "{:>%s}" % len(str(len(pagemap[0]))+"  ")
+            print rowlabel.format("  ") + "0       8      16      24      31"
+            print rowlabel.format("  ") + "|.......|.......|.......|......."
+            while True:
+                print rowlabel.format(str(j) + ": ") + pagemap[0][j:j+32]
+                j+=32
+                if (j>len(pagemap[0])):
+                    print ""
+                    break
+        else:
+            print " %s: %s" % (value,pagemap[i])
+        outcsv.writerow((value,pagemap[i]))
+        i+=1
+
     print "\n[CONTENT ANALYSIS]"
 
     print "\n <CONNECTING TO DB...>"
@@ -92,10 +126,8 @@ def main():
         logging.error("Could not connect to SQLite DB - Exiting...")
         sys.exit(1)
 
-    print "\n <GENERATING TABLE CONTENT REPORT>"
+    print " <GENERATING TABLE CONTENT REPORT>\n"
     elementCount, elementDict = getElements(dbcurs)
-
-    print "\n[RESULTS]\n"
 
     logging.info("Total elements identified in database: %s" % str(elementCount))
     logging.info(" - # of Tables: %s" % str(len(elementDict["tables"])))
@@ -272,9 +304,9 @@ def setupLogging(outfile):
  ___/ / /_/ / / /___/ / /_/  __/ /_/  __/ /
 /____/\___\_\/_____/_/\__/\___/____|___/_/
 Forensic SQLite Database Analyser and Reporting Tool         """)
-    print "------------------------------------------------------"
-    logging.info("Version ["+version+"] Build ["+build+"] Author [James E. Hung]")
-    print "------------------------------------------------------"
+    print "-------------------------------------------------------"
+    logging.info(" Version ["+version+"] Build ["+build+"] Author [James E. Hung]")
+    print "-------------------------------------------------------"
     #time.sleep(3)
     return
 

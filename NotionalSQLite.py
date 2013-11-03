@@ -25,8 +25,9 @@ class NotionalSQLite:
                 "totalfreepage","schemacookie","schemanum","defpagecache",
                 "bigroottree","textencode","userver","incvac","expansion",
                 "validfor","sqlver"]
+    _btreetblleafheaderfmt = ">bsssbi"
 
-    statuscode = 0
+    statuscode = 1
     headerdict = dict()
     headertransdict = dict()
     isDirty = bool()
@@ -69,7 +70,17 @@ class NotionalSQLite:
             print self._parseCell(60783)
         self.statuscode = 0
 
-            print self.mapPages(4096)
+    def _parseTableLeafPageHeader(self,offset,pagesize):
+        """
+        Parse a binary-tree Table Leaf header given its starting (physical) offset.
+        Pass physical offset to start of page (should be 0x0D) and page size from
+        DB header.
+        Returns a dict of header field metadata and a list of cell-pointers.
+        """
+        self.dbfile.seek(offset)
+
+
+
 
     def _parseDBHeader(self):
         """
@@ -283,16 +294,11 @@ class NotionalSQLite:
                 pagemap+="h"
                 headercnt+=1
             else:
-                pagemap+="o"
+                pagemap+="O"
                 overflow+=1
             offset+=(pagesize)
-        print str(intindex)
-        print str(inttbl)
-        print str(leafindex)
-        print str(leaftbl)
-        print str(headercnt)
-        print str(overflow)
-        return pagemap
+        total = intindex + inttbl + leafindex + leaftbl + headercnt + overflow 
+        return (pagemap,intindex,inttbl,leafindex,leaftbl,headercnt,overflow,total)
 
     def checkSignature(self):
         """
