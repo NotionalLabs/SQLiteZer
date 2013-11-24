@@ -13,7 +13,6 @@ import logging
 import struct
 import os
 
-
 class NotionalSQLite:
     """
     NotionalSQLite is used to store file structure information and provide
@@ -33,10 +32,11 @@ class NotionalSQLite:
     isDirty = bool()
     dbfile = None
     isWAL = False
+    debug = False
 
-    debug = 0
+    def __init__(self, filepath, debug):
 
-    def __init__(self, filepath):
+        self.debug = debug
 
         for key in self._dictkeys:
             self.headertransdict[key] = "ERROR - call translateHeader() first."
@@ -51,36 +51,52 @@ class NotionalSQLite:
 
         if self.debug:
 
-            """
-            recordstartofs = 60783
-            val,length = self._getVarIntOfs(recordstartofs)
-            print "Record Length val: " + str(val)
-            print "varint len: " + str(length)
-            recordstartofs+=length
-            val,length = self._getVarIntOfs(recordstartofs)
-            print "Record Row ID: " + str(val)
-            print "varint len: " + str(length)
-            recordstartofs+=length
-            val,length = self._getVarIntOfs(recordstartofs)
-            print "Payload Header Length: " + str(val)
-            print "varint len: " + str(length)
-            recordstartofs+=length
-            """
+            pagedict = self.getPageTypeDict(self.headerdict['pagesize'])
 
-            print self._parseCell(60783)
+            for pageofs in pagedict['leaftable']:
+                a,b,c,d = self._parseTableLeafPageHeader(pageofs,self.headerdict['pagesize'])
+
+
         self.statuscode = 0
 
     def _parseTableLeafPageHeader(self,offset,pagesize):
         """
         Parse a binary-tree Table Leaf header given its starting (physical) offset.
         Pass physical offset to start of page (should be 0x0D) and page size from
-        DB header.
-        Returns a dict of header field metadata and a list of cell-pointers.
+        DB header. cell-pointers, freeblock lists, and the offset to unused area
+        are relative offsets.
+        Returns a dict of header field metadata, a list of (active) cell-pointers,
+        a list of freeblocks, and the starting offset of the content area.
         """
+        pageheader = dict()
+        celllist = list()
+        freeblklist = list()
+
+        # Parse Page Header
         self.dbfile.seek(offset)
+        pageheader['pagetype'] = ord(self.dbfile.read(1))
+        pageheader['freeblockofs'] = struct.unpack(">h",self.dbfile.read(2))[0]
+        pageheader['pagecellcount'] = struct.unpack(">h",self.dbfile.read(2))[0]
+        pageheader['contentareaofs'] = struct.unpack(">h",self.dbfile.read(2))[0]
+        pageheader['freebytefrags'] = ord(self.dbfile.read(1))
 
+        # Parse Cell Pointer Array and note the start of cell content area
+        for ptr in range(0,pageheader['pagecellcount']):
+            celllist.append(struct.unpack(">h",self.dbfile.read(2))[0])
+        contentofs = self.dbfile.tell() - offset
 
+        # Get Freeblock offsets
+        self.dbfile.seek(offset+pageheader['freeblockofs'])
+        freeblkptr = pageheader['freeblockofs']
+        while freeblkptr != 0:
+            freeblklist.append(freeblkptr)
+            freeblkptr = struct.unpack(">h",self.dbfile.read(2))[0]
+            self.dbfile.seek(offset+freeblkptr)
 
+        #for cell in celllist:
+        #    print self._parseCell(offset+cell)
+
+        return pageheader, celllist, freeblklist, contentofs
 
     def _parseDBHeader(self):
         """
@@ -113,6 +129,10 @@ class NotionalSQLite:
             elif field[0] == "ST_INT16":
                 self.dbfile.seek(dataoffset)
                 celldatalist.append(struct.unpack(">h",self.dbfile.read(2))[0])
+                dataoffset+=field[1]
+            elif field[0] == "ST_INT24":
+                self.dbfile.seek(dataoffset)
+                celldatalist.append("ST_INT24 - NOT IMPLEMENTED!") # NOT IMPLEMENTED YET!
                 dataoffset+=field[1]
             elif field[0] == "ST_INT32":
                 self.dbfile.seek(dataoffset)
@@ -259,6 +279,52 @@ class NotionalSQLite:
 
         return varintval,varintlen
 
+    def getPageTypeDict(self,pagesize):
+        """
+        Return a dict containing seperate lists of all Page type absolute
+        starting offsets.
+        """
+        pagedict = dict()
+        pagedict['intindex'] = list()
+        pagedict['inttable'] = list()
+        pagedict['leafindex'] = list()
+        pagedict['leaftable'] = list()
+        pagedict['overflow'] = list()
+        offset = 0
+        filesize = os.path.getsize(self.dbfile.name)
+
+        while (offset < filesize):
+            self.dbfile.seek(offset)
+            flag = ord(self.dbfile.read(1))
+            if (flag == 2):
+                pagedict['intindex'].append(offset)
+            elif (flag == 5):
+                pagedict['inttable'].append(offset)
+            elif (flag == 10):
+                pagedict['leafindex'].append(offset)
+            elif (flag == 13):
+                pagedict['leaftable'].append(offset)
+            elif (flag == 83):
+                pass
+            elif (flag == 0):
+                pagedict['overflow'].append(offset)
+            else:
+                print "Invalid Page Type: %s (%s)" % (str(flag), str(offset))
+                break
+            offset+=(pagesize)
+        return pagedict
+
+    def getActiveRowContent(self, offset, pagesize):
+        """
+        Return a list of lists containing the content of all active cells in the
+        page.
+        """
+        cellcontentlist = list()
+        a,celllist,c,d = self._parseTableLeafPageHeader(offset,pagesize)
+        for cell in celllist:
+            cellcontentlist.append(self._parseCell(offset+cell))
+        return cellcontentlist
+
     def mapPages(self,pagesize):
         """
         Debugging method to give a visual representation of the distribution of
@@ -275,6 +341,7 @@ class NotionalSQLite:
         offset = intindex = inttbl = leafindex = leaftbl = headercnt = overflow = 0
         pagemap = ""
         filesize = os.path.getsize(self.dbfile.name)
+
         while (offset < filesize):
             self.dbfile.seek(offset)
             flag = ord(self.dbfile.read(1))
@@ -297,7 +364,7 @@ class NotionalSQLite:
                 pagemap+="O"
                 overflow+=1
             offset+=(pagesize)
-        total = intindex + inttbl + leafindex + leaftbl + headercnt + overflow 
+        total = intindex + inttbl + leafindex + leaftbl + headercnt + overflow
         return (pagemap,intindex,inttbl,leafindex,leaftbl,headercnt,overflow,total)
 
     def checkSignature(self):
