@@ -337,7 +337,7 @@ class NotionalSQLite:
         for freeblk in freeblklist:
             self.dbfile.seek(offset+freeblk+2) # skip past the 2-byte next freeblock ptr
             freeblklen = struct.unpack(">H",self.dbfile.read(2))[0]
-            unalloclist.append([offset+freeblk,"Free Block",freeblklen,self._strip_nonprintable(self.dbfile.read(freeblklen))])
+            unalloclist.append([offset+freeblk,"Free Block",freeblklen,self._strip_nonprintable(self.dbfile.read(freeblklen-4))])
         return unalloclist
 
     def mapPages(self,pagesize):

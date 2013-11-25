@@ -296,6 +296,7 @@ def dumpUnallocated(header,outunalloctsv,pagetypedict):
     """
     i=0
     print "\n[DUMP UNALLOCATED CONTENT]"
+    outunalloctsv.writerow(["Offset","Unallocated Type","Block Length","Printable Data"])
     print " <PARSING LEAF TABLE PAGES FOR UNALLOCATED CONTENT>\n"
     for page in pagetypedict['leaftable']:
         unalloclist = header.getUnallocContent(page,header.headerdict['pagesize'])
