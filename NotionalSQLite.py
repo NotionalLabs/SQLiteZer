@@ -12,19 +12,23 @@
 import logging
 import struct
 import os
+import re
+import unicodedata
 
 class NotionalSQLite:
     """
     NotionalSQLite is used to store file structure information and provide
     convenience functions for parsing the contents.
     """
-    _dbheaderfmt = ">16shbbbbbbiiiiiiiiiii24sii"
+    _dbheaderfmt = ">16sHbbbbbbiiiiiiiiiii24sii"
     _dictkeys = ["sig","pagesize","writever","readver","resspace","maxpayload",
                 "minpayload","leafpayload","changecount","dbsize","freepagelist",
                 "totalfreepage","schemacookie","schemanum","defpagecache",
                 "bigroottree","textencode","userver","incvac","expansion",
                 "validfor","sqlver"]
     _btreetblleafheaderfmt = ">bsssbi"
+    all_chars = (unichr(i) for i in xrange(0x110000))
+    control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
 
     statuscode = 1
     headerdict = dict()
@@ -50,14 +54,13 @@ class NotionalSQLite:
         self._parseDBHeader();
 
         if self.debug:
-
-            pagedict = self.getPageTypeDict(self.headerdict['pagesize'])
-
-            for pageofs in pagedict['leaftable']:
-                a,b,c,d = self._parseTableLeafPageHeader(pageofs,self.headerdict['pagesize'])
-
+            pass
 
         self.statuscode = 0
+
+    def _strip_nonprintable(self,s):
+        control_char_re = re.compile('[%s]' % re.escape(self.control_chars))
+        return control_char_re.sub('', s)
 
     def _parseTableLeafPageHeader(self,offset,pagesize):
         """
@@ -83,7 +86,7 @@ class NotionalSQLite:
         # Parse Cell Pointer Array and note the start of cell content area
         for ptr in range(0,pageheader['pagecellcount']):
             celllist.append(struct.unpack(">h",self.dbfile.read(2))[0])
-        contentofs = self.dbfile.tell() - offset
+        cellptrendofs = self.dbfile.tell() - offset
 
         # Get Freeblock offsets
         self.dbfile.seek(offset+pageheader['freeblockofs'])
@@ -93,10 +96,7 @@ class NotionalSQLite:
             freeblkptr = struct.unpack(">h",self.dbfile.read(2))[0]
             self.dbfile.seek(offset+freeblkptr)
 
-        #for cell in celllist:
-        #    print self._parseCell(offset+cell)
-
-        return pageheader, celllist, freeblklist, contentofs
+        return pageheader, celllist, freeblklist, cellptrendofs
 
     def _parseDBHeader(self):
         """
@@ -166,7 +166,6 @@ class NotionalSQLite:
                 print field[0]
 
         return celldatalist
-
 
     def _parseCellHeader(self,offset):
         """
@@ -311,7 +310,7 @@ class NotionalSQLite:
             else:
                 print "Invalid Page Type: %s (%s)" % (str(flag), str(offset))
                 break
-            offset+=(pagesize)
+            offset+=pagesize
         return pagedict
 
     def getActiveRowContent(self, offset, pagesize):
@@ -324,6 +323,22 @@ class NotionalSQLite:
         for cell in celllist:
             cellcontentlist.append(self._parseCell(offset+cell))
         return cellcontentlist
+
+    def getUnallocContent(self, offset, pagesize):
+        """
+        Return a list of lists containing the content of all unallocated areas
+        in the page. All non-printable chars are stripped.
+        """
+        unalloclist = list()
+        pageheader, celllist, freeblklist, cellptrendofs = self._parseTableLeafPageHeader(offset,pagesize)
+        self.dbfile.seek(offset+cellptrendofs)
+        length = pageheader['contentareaofs']-cellptrendofs
+        unalloclist.append([offset+cellptrendofs,"Unallocated",length,self._strip_nonprintable(self.dbfile.read(length))])
+        for freeblk in freeblklist:
+            self.dbfile.seek(offset+freeblk+2) # skip past the 2-byte next freeblock ptr
+            freeblklen = struct.unpack(">H",self.dbfile.read(2))[0]
+            unalloclist.append([offset+freeblk,"Free Block",freeblklen,self._strip_nonprintable(self.dbfile.read(freeblklen))])
+        return unalloclist
 
     def mapPages(self,pagesize):
         """
@@ -458,7 +473,7 @@ class NotionalSQLite:
         elif self.headerdict["schemanum"] == 4:
             self.headertransdict["schemanum"] = "4 - SQLite 3.3.0+ Compatible"
         else:
-            self.headertransdict["schemanum"] = "Invalid value: %s" % str(headerdict["schemanum"])
+            self.headertransdict["schemanum"] = "Invalid value: %s" % str(self.headerdict["schemanum"])
     # Suggested cache size
         self.headertransdict["defpagecache"] = str(self.headerdict["defpagecache"])
     # Largest Root Tree Page and Incremental Vacuum Settings
@@ -467,10 +482,10 @@ class NotionalSQLite:
             if self.headerdict["incvac"] == 0:
                 self.headertransdict["incvac"] = "0 - auto_vacuum mode"
             else:
-                self.headertransdict["incvac"] = "Invalid mode: %s" % str(headerdict["incvac"])
+                self.headertransdict["incvac"] = "Invalid mode: %s" % str(self.headerdict["incvac"])
         else:
             self.headertransdict["bigroottree"] = str(self.headerdict["bigroottree"])
-            self.headertransdict["incvac"] = "%s - incremental_vacuum mode" % str(headerdict["incvac"])
+            self.headertransdict["incvac"] = "%s - incremental_vacuum mode" % str(self.headerdict["incvac"])
     # Text Encoding
         if self.headerdict["textencode"] == 1:
             self.headertransdict["textencode"] = "UTF-8"

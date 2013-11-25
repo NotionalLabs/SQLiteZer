@@ -21,8 +21,8 @@ import struct
 
 import NotionalSQLite
 
-version = '0.5'
-build = '20131123'
+version = '0.6'
+build = '20131124'
 
 headerfields = (("Signature","sig"),
                 ("Page Size","pagesize"),
@@ -50,7 +50,7 @@ def main():
     startTime = datetime.datetime.now()
     startTimeStr = str(startTime)[:19].replace(":","-").replace(" ","_")
 
-    outfile, infile, pagemap, debug, active, content = validateArgs()
+    outfile, infile, pagemap, debug, active, content, unalloc = validateArgs()
     setupLogging(outfile)
 
     print "\n[CONFIGURATION]"
@@ -58,9 +58,11 @@ def main():
     logging.info(" Report File: " + os.path.abspath(outfile))
 
     print "\n <SETTING UP REPORT FILE(S)...>"
-    outcsv = csv.writer(open(outfile,"wb"))
+    outcsv = csv.writer(open(outfile+".csv","wb"))
     if active:
         outactivecsv = csv.writer(open(outfile+"_active.csv","wb"))
+    if unalloc:
+        outunalloctsv = csv.writer(open(outfile+"_unalloc.csv","wb"), delimiter='\t',quotechar='"')
 
     print "\n[DATABASE HEADER]"
     header = NotionalSQLite.NotionalSQLite(infile,debug)
@@ -84,12 +86,16 @@ def main():
         print " %s: %s" % (value[0],transheaderdict[value[1]])
         outcsv.writerow((value[0],header.headerdict[value[1]],transheaderdict[value[1]]))
 
+    pagetypedict = header.getPageTypeDict(header.headerdict['pagesize'])
+
     if pagemap: # if 'm' switch is used.
         mapPages(header, outcsv)
     if content: # if 'c' switch is used.
         contentanalysis(infile, outcsv)
     if active: # if 'a' switch is used.
-        dumpActiveRows(header,outactivecsv)
+        dumpActiveRows(header,outactivecsv,pagetypedict)
+    if unalloc: # if 'u' switch is used.
+        dumpUnallocated(header,outunalloctsv,pagetypedict)
 
     print ""
     logging.info("[REPORTING COMPLETED]")
@@ -165,6 +171,10 @@ def getElements(dbcurs):
     return elementcount, elementdict
 
 def contentanalysis(infile,outcsv):
+    """
+    Triggered if the 'c' switch is supplied.
+    Enumerates the tables, indexes, triggers, etc... and enumerates the rows in each.
+    """
     print "\n[CONTENT ANALYSIS]"
     print "\n <CONNECTING TO DB...>"
     try:
@@ -258,21 +268,47 @@ def contentanalysis(infile,outcsv):
             for view, row in zip(elementDict["views"], rowdata):
                 print row_format.format(elementDict["views"].index(view)+1, view[0], *row)
                 outcsv.writerow([elementDict["views"].index(view)+1, view[0],row[0],view[2],view[3].replace(os.linesep,"")])
-
     else:
         logging.info("WARNING: Database does not contain any elements.")
 
-def dumpActiveRows(header,outactivecsv):
+def dumpActiveRows(header,outactivecsv,pagetypedict):
     """
-
+    Triggered if the 'a' switch is supplied.
+    Export all active row content into CSV format. Useful for grep, manual review, etc...
+    The first value of each line is the Page Offset.
     """
-    pagetypedict = header.getPageTypeDict(header.headerdict['pagesize'])
+    i=0
+    print "\n[DUMP ACTIVE CONTENT]"
+    print " <PARSING LEAF TABLE PAGES FOR ACTIVE CELL CONTENT>\n"
     for page in pagetypedict['leaftable']:
         for row in header.getActiveRowContent(page,header.headerdict['pagesize']):
+            row.insert(0,page)
             outactivecsv.writerow(row)
+            i+=1
+            if((i%5000)==0):
+                print "  %s cells exported..." % str(i)
+    logging.info("Active cell export complete; %s cells exported." % str(i))
+
+def dumpUnallocated(header,outunalloctsv,pagetypedict):
+    """
+    Triggered if the 'u' switch is supplied.
+    Export all unallocated data to a tab-delimited file.
+    """
+    i=0
+    print "\n[DUMP UNALLOCATED CONTENT]"
+    print " <PARSING LEAF TABLE PAGES FOR UNALLOCATED CONTENT>\n"
+    for page in pagetypedict['leaftable']:
+        unalloclist = header.getUnallocContent(page,header.headerdict['pagesize'])
+        for row in unalloclist:
+            outunalloctsv.writerow(row)
+            i+=1
+            if((i%5000)==0):
+                print "  %s unallocated blocks exported..." % str(i)
+    logging.info("Unallocated block export complete; %s blocks exported." % str(i))
 
 def mapPages(header, outcsv):
     """
+    Triggered if the 'm' switch is supplied.
     Generate a visual map of the database's page type distribution.
     """
     print "\n[PAGE MAP]\n"
@@ -331,19 +367,17 @@ Forensic SQLite Database Analyser and Reporting Tool         """)
 
 def validateArgs():
     """
-    Validate arguments:
-        - input = input SQLite DB file.
-        - output = output report CSV filename.
-        - pagemap = bool flag for printing page map.
-        - debug = enable developer debugging.
+    Validate input arguments.
     """
-    parser = argparse.ArgumentParser(description="\nSQLite Reporter - 2013 Jim Hung, Notional-Labs.com")
+    parser = argparse.ArgumentParser(description="Notional-Labs.com: SQLiteZer")
     parser.add_argument('-i','--input', help='Target SQLite database file.', required=True)
-    parser.add_argument('-o','--output', help='Output report file (CSV).', required=True)
-    parser.add_argument('-c','--content', help='Generate content report.', action='store_true')
-    parser.add_argument('-m','--pagemap', help='Print a visual map of the physical page distribution', action='store_true')
-    parser.add_argument('-d','--debug', help='Developers Only - Enable debug mode.', action='store_true')
-    parser.add_argument('-a','--active', help='Dump all raw active records into a CSV.', action='store_true')
+    parser.add_argument('-o','--output', help='Output job name (exclude file extension).', required=True)
+    parser.add_argument('-a','--active', help='OPTIONAL: Dump all raw active records into a CSV.', action='store_true')
+    parser.add_argument('-c','--content', help='OPTIONAL: Generate content report.', action='store_true')
+    parser.add_argument('-m','--pagemap', help='OPTIONAL: Print a visual map of the physical page distribution', action='store_true')
+    parser.add_argument('-u','--unalloc', help='OPTIONAL: Dump all unallocated areas of each page into a CSV.', action='store_true')
+    parser.add_argument('-x','--debug', help='OPTIONAL: Developers Only - Enable debug mode.', action='store_true')
+
     args = vars(parser.parse_args())
 
     try:
@@ -352,7 +386,7 @@ def validateArgs():
         print "Target SQLite DB file does not exist or cannot be opened. Exiting..."
         sys.exit(1)
 
-    return args['output'],args['input'],args['pagemap'],args['debug'],args['active'],args['content']
+    return args['output'],args['input'],args['pagemap'],args['debug'],args['active'],args['content'],args['unalloc']
 
 if __name__ == '__main__':
     main()
