@@ -1,7 +1,7 @@
 SQLiteZer
 =========
 
-A forensic SQLite 3 database analysis tool. Parse out DB unallocated space to recover deleted data, directly export active cell content (bypassing the SQL parser), automatically summarize database object statistics, and all the juicy technical info any self-respecting reverse engineer might want. Written in Python 2.7.
+A forensic SQLite 3 database analysis tool. Parse out DB unallocated space to recover deleted data, directly export active cell content (bypassing the SQL parser), automatically summarize database object statistics, and expose all the juicy technical info any self-respecting reverse engineer might want. Written in Python 2.7.
 
 	usage: SQLitezer.py [-h] -i INPUT -o OUTPUT [-a] [-c] [-m] [-u] [-x]
 
