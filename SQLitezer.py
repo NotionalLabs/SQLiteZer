@@ -21,8 +21,8 @@ import struct
 
 import NotionalSQLite
 
-version = '0.6'
-build = '20131124'
+version = '0.6.2'
+build = '20131207'
 
 headerfields = (("Signature","sig"),
                 ("Page Size","pagesize"),
@@ -110,7 +110,7 @@ def getRowCount(tablename,dbcurs):
         sqlquery = "SELECT count(*) FROM %s" % (tablename)
         dbcurs.execute(sqlquery)
     except sqlite3.OperationalError as e:
-        logging.error('ERROR: The SQLite3 module encountered an error querying the table "%s" - check that you replaced the sqlite3.dll with the latest Amalgamation DLL from http://www.sqlite.org/download.html\nError: %s' % tablename,e)
+        logging.error('ERROR: The SQLite3 module encountered an error querying the table "%s" - check that you replaced the sqlite3.dll with the latest Amalgamation DLL from http://www.sqlite.org/download.html\nError: %s' % (tablename,e))
         return 'ERROR'
     rowcount = dbcurs.fetchall()
     return rowcount[0][0]

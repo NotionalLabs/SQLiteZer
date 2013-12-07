@@ -309,7 +309,6 @@ class NotionalSQLite:
                 pagedict['overflow'].append(offset)
             else:
                 print "Invalid Page Type: %s (%s)" % (str(flag), str(offset))
-                break
             offset+=pagesize
         return pagedict
 
